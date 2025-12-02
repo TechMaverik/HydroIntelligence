@@ -9,10 +9,10 @@
 #define TDS_PIN 34
 #define PH_PIN 35
 
-#define WIFI_SSID "Ai Lab"
-#define WIFI_PASSWORD "Welc0me@123"
-#define API_KEY "AIzaSyAEPMG1VYq3kykLYNCYAkds3wLNb-n5HSM"
-#define DATABASE_URL "https://hydrointelligence-37338-default-rtdb.asia-southeast1.firebasedatabase.app/"
+#define WIFI_SSID ""
+#define WIFI_PASSWORD ""
+#define API_KEY ""
+#define DATABASE_URL ""
 
 DHT dht(DHT_PIN, DHT_TYPE);
 
