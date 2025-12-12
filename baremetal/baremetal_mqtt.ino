@@ -10,6 +10,7 @@
 #define DHT_TYPE  DHT11
 #define TDS_PIN   34
 #define PH_PIN    35
+#define RELAY_PIN 2    // Relay control pin
 
 // ---------- WiFi ----------
 const char* ssid     = "Ai Lab";
@@ -33,9 +34,12 @@ DHT dht(DHT_PIN, DHT_TYPE);
 
 unsigned long lastPublish = 0;
 const unsigned long publishInterval = 5000;  // ms
-int displayMode = 0;  // 0=Time+IP, 1=Sensors, 2=WiFi Status
+int displayMode = 0;  // 0=Time+IP, 1=Sensors, 2=Relay Status
 unsigned long lastDisplaySwitch = 0;
 const unsigned long displayInterval = 3000;  // Switch every 3 sec
+
+bool relayState = false;  // Track relay state
+int relayMinuteStart = -1; // Starting minute of current 30-min cycle
 
 // ---------- Helper: init LCD ----------
 void setupLCD() {
@@ -143,6 +147,34 @@ void reconnectMQTT() {
   }
 }
 
+// ---------- Relay control logic ----------
+void updateRelay(DateTime now) {
+  int currentMinute = now.hour() * 60 + now.minute();
+  
+  // Check if new 30-minute cycle started
+  if (currentMinute / 30 != relayMinuteStart / 30) {
+    relayMinuteStart = currentMinute;
+    relayState = !relayState;  // Toggle state every 30 minutes
+    digitalWrite(RELAY_PIN, relayState ? HIGH : LOW);
+    
+    Serial.print("Relay toggled to: ");
+    Serial.println(relayState ? "ON" : "OFF");
+    Serial.print("Cycle start minute: ");
+    Serial.println(relayMinuteStart);
+  }
+  
+  // Determine if relay should be ON (first 15 min) or OFF (next 15 min)
+  int cyclePosition = (currentMinute - relayMinuteStart) % 30;
+  bool shouldBeOn = (cyclePosition < 15);
+  
+  if (relayState != shouldBeOn) {
+    relayState = shouldBeOn;
+    digitalWrite(RELAY_PIN, relayState ? HIGH : LOW);
+    Serial.print("Relay corrected to: ");
+    Serial.println(relayState ? "ON" : "OFF");
+  }
+}
+
 // ---------- Display Mode 0: Time + IP ----------
 void displayTimeIP(DateTime now) {
   lcd.clear();
@@ -180,15 +212,22 @@ void displaySensors(float temp, float hum, float tds, float ph) {
   lcd.print("ppm");
 }
 
-// ---------- Display Mode 2: WiFi Status ----------
-void displayWiFiStatus() {
+// ---------- Display Mode 2: Relay Status ----------
+void displayRelayStatus(DateTime now) {
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("WiFi:OK");
+  lcd.print("Relay:");
+  lcd.print(relayState ? "ON " : "OFF");
+  
+  int currentMinute = now.hour() * 60 + now.minute();
+  int cyclePosition = (currentMinute - relayMinuteStart) % 30;
+  int timeLeft = 15 - cyclePosition;
+  if (timeLeft < 0) timeLeft += 30;
+  
   lcd.setCursor(0, 1);
-  lcd.print("Signal:");
-  lcd.print(WiFi.RSSI());
-  lcd.print("dBm");
+  lcd.print("Cycle:");
+  lcd.print(cyclePosition);
+  lcd.print("m/30 ");
 }
 
 // ---------- Sensor read helpers ----------
@@ -238,6 +277,10 @@ float readPH() {
 void setup() {
   Serial.begin(115200);
   
+  // Initialize relay pin
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);  // Start with relay OFF
+  
   Wire.begin();  // SDA=21, SCL=22
   setupLCD();
   
@@ -250,6 +293,8 @@ void setup() {
   
   lcd.clear();
   lcd.print("All systems OK!");
+  lcd.setCursor(0, 1);
+  lcd.print("Relay ready");
   delay(1500);
   
   client.setServer(mqtt_server, mqtt_port);
@@ -263,6 +308,11 @@ void loop() {
   }
   client.loop();
 
+  DateTime rtcTime = rtc.now();
+  
+  // Update relay control every loop (RTC-based, precise timing)
+  updateRelay(rtcTime);
+
   // Update display every 3 seconds
   unsigned long now = millis();
   if (now - lastDisplaySwitch >= displayInterval) {
@@ -274,7 +324,6 @@ void loop() {
   if (now - lastPublish >= publishInterval) {
     lastPublish = now;
     
-    DateTime rtcTime = rtc.now();
     float temp = readTemperature();
     float hum = readHumidity();
     float tds = readTDS();
@@ -289,18 +338,20 @@ void loop() {
     switch(displayMode) {
       case 0: displayTimeIP(rtcTime); break;
       case 1: displaySensors(temp, hum, tds, ph); break;
-      case 2: displayWiFiStatus(); break;
+      case 2: displayRelayStatus(rtcTime); break;
     }
 
-    // MQTT payload with full data
-    char payload[350];
+    // MQTT payload with relay status included
+    char payload[400];
     snprintf(payload, sizeof(payload),
              "{\"time\":\"%04d-%02d-%02dT%02d:%02d:%02d\","
              "\"temp\":%.1f,\"hum\":%.1f,\"tds\":%.0f,\"ph\":%.1f,"
-             "\"rssi\":%d,\"ip\":\"%s\"}",
+             "\"relay\":%s,\"rssi\":%d,\"ip\":\"%s\"}",
              rtcTime.year(), rtcTime.month(), rtcTime.day(),
              rtcTime.hour(), rtcTime.minute(), rtcTime.second(),
-             temp, hum, tds, ph, WiFi.RSSI(), WiFi.localIP().toString().c_str());
+             temp, hum, tds, ph,
+             relayState ? "ON" : "OFF",
+             WiFi.RSSI(), WiFi.localIP().toString().c_str());
 
     Serial.println(payload);
     
