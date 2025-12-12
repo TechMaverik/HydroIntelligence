@@ -3,7 +3,9 @@
 #include <DHT.h>
 #include <Wire.h>                    // I2C support
 #include <LiquidCrystal_I2C.h>       // I2C LCD library
-#include <RTClib.h>                  // RTC library
+#include <WiFiUdp.h>
+#include <NTPClient.h>
+#include <time.h>
 
 // ---------- Pins ----------
 #define DHT_PIN   4
@@ -21,11 +23,12 @@ const char* mqtt_server = "broker.mqtt.cool";
 const int   mqtt_port   = 1883;
 const char* mqtt_topic  = "/sensor_data_stream";
 
+// ---------- NTP ----------
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 19800, 60000); // IST timezone offset
+
 // ---------- LCD (I2C) ----------
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // Address 0x27, 16x2 display
-
-// ---------- RTC ----------
-RTC_DS3231 rtc;
 
 // ---------- Globals ----------
 WiFiClient espClient;
@@ -59,7 +62,7 @@ void setupLCD() {
   // Show current time during upload/initialization
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Getting time..");
+  lcd.print("Getting NTP time..");
   delay(2000);
   lcd.clear();
 }
@@ -85,45 +88,34 @@ void setupWiFi() {
   Serial.println(WiFi.localIP());
 }
 
-// ---------- Helper: init RTC ----------
-void setupRTC() {
-  if (!rtc.begin()) {
-    Serial.println("Couldn't find RTC");
-    lcd.clear();
-    lcd.print("RTC ERROR!");
-    lcd.setCursor(0, 1);
-    lcd.print("Check wiring");
-    delay(3000);
-  }
+// ---------- Helper: init NTP time ----------
+void setupNTP() {
+  timeClient.begin();
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Syncing NTP...");
   
-  // Show current time on LCD when setting RTC
-  if (rtc.lostPower()) {
-    Serial.println("RTC lost power, setting time");
-    
-    DateTime compileTime(F(__DATE__), F(__TIME__));
-    rtc.adjust(compileTime);
-    
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("RTC: Set Time");
-    lcd.setCursor(0, 1);
-    
-    char timeStr[17];
-    sprintf(timeStr, "%s %s", compileTime.timestamp().c_str(), compileTime.timestamp().c_str());
-    lcd.print(timeStr);
-    delay(3000);
+  // Force initial sync
+  timeClient.update();
+  
+  // Display sync status and current time
+  lcd.setCursor(0, 1);
+  if (timeClient.isTimeSet()) {
+    lcd.print("NTP OK");
+    Serial.println("NTP synchronized");
   } else {
-    Serial.println("RTC OK - Current time set");
+    lcd.print("NTP FAIL");
+    Serial.println("NTP sync failed");
   }
   
-  // Display current time briefly after RTC setup
-  DateTime now = rtc.now();
+  delay(2000);
+  
+  // Display current time briefly after NTP setup
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Time synced:");
   lcd.setCursor(0, 1);
-  char currentTime[9];
-  sprintf(currentTime, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+  String currentTime = timeClient.getFormattedTime();
   lcd.print(currentTime);
   delay(2000);
   lcd.clear();
@@ -148,8 +140,12 @@ void reconnectMQTT() {
 }
 
 // ---------- Relay control logic ----------
-void updateRelay(DateTime now) {
-  int currentMinute = now.hour() * 60 + now.minute();
+void updateRelay() {
+  timeClient.update(); // Keep NTP updated
+  unsigned long epochTime = timeClient.getEpochTime();
+  
+  struct tm *ptm = gmtime((time_t *)&epochTime);
+  int currentMinute = ptm->tm_hour * 60 + ptm->tm_min;
   
   // Check if new 30-minute cycle started
   if (currentMinute / 30 != relayMinuteStart / 30) {
@@ -176,14 +172,13 @@ void updateRelay(DateTime now) {
 }
 
 // ---------- Display Mode 0: Time + IP ----------
-void displayTimeIP(DateTime now) {
+void displayTimeIP() {
   lcd.clear();
+  timeClient.update();
   
   // Line 1: Time HH:MM:SS
   lcd.setCursor(0, 0);
-  char timeStr[9];
-  sprintf(timeStr, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
-  lcd.print(timeStr);
+  lcd.print(timeClient.getFormattedTime().substring(0, 8));
   
   // Line 2: IP address
   lcd.setCursor(0, 1);
@@ -213,16 +208,18 @@ void displaySensors(float temp, float hum, float tds, float ph) {
 }
 
 // ---------- Display Mode 2: Relay Status ----------
-void displayRelayStatus(DateTime now) {
+void displayRelayStatus() {
   lcd.clear();
+  timeClient.update();
+  unsigned long epochTime = timeClient.getEpochTime();
+  
+  struct tm *ptm = gmtime((time_t *)&epochTime);
+  int currentMinute = ptm->tm_hour * 60 + ptm->tm_min;
+  int cyclePosition = (currentMinute - relayMinuteStart) % 30;
+  
   lcd.setCursor(0, 0);
   lcd.print("Relay:");
   lcd.print(relayState ? "ON " : "OFF");
-  
-  int currentMinute = now.hour() * 60 + now.minute();
-  int cyclePosition = (currentMinute - relayMinuteStart) % 30;
-  int timeLeft = 15 - cyclePosition;
-  if (timeLeft < 0) timeLeft += 30;
   
   lcd.setCursor(0, 1);
   lcd.print("Cycle:");
@@ -288,13 +285,13 @@ void setup() {
   pinMode(TDS_PIN, INPUT);
   pinMode(PH_PIN, INPUT);
   
-  setupRTC();
   setupWiFi();
+  setupNTP();
   
   lcd.clear();
   lcd.print("All systems OK!");
   lcd.setCursor(0, 1);
-  lcd.print("Relay ready");
+  lcd.print("NTP+Relay ready");
   delay(1500);
   
   client.setServer(mqtt_server, mqtt_port);
@@ -302,16 +299,17 @@ void setup() {
 
 // ---------- Main loop ----------
 void loop() {
+  // NTP update every loop for accurate timing
+  timeClient.update();
+  
   // MQTT maintenance
   if (!client.connected()) {
     reconnectMQTT();
   }
   client.loop();
 
-  DateTime rtcTime = rtc.now();
-  
-  // Update relay control every loop (RTC-based, precise timing)
-  updateRelay(rtcTime);
+  // Update relay control every loop (NTP-based, precise timing)
+  updateRelay();
 
   // Update display every 3 seconds
   unsigned long now = millis();
@@ -336,19 +334,21 @@ void loop() {
 
     // Update display based on current mode
     switch(displayMode) {
-      case 0: displayTimeIP(rtcTime); break;
+      case 0: displayTimeIP(); break;
       case 1: displaySensors(temp, hum, tds, ph); break;
-      case 2: displayRelayStatus(rtcTime); break;
+      case 2: displayRelayStatus(); break;
     }
 
-    // MQTT payload with relay status included
+    // MQTT payload with NTP time and relay status
+    unsigned long epochTime = timeClient.getEpochTime();
+    struct tm *ptm = gmtime((time_t *)&epochTime);
     char payload[400];
     snprintf(payload, sizeof(payload),
              "{\"time\":\"%04d-%02d-%02dT%02d:%02d:%02d\","
              "\"temp\":%.1f,\"hum\":%.1f,\"tds\":%.0f,\"ph\":%.1f,"
              "\"relay\":%s,\"rssi\":%d,\"ip\":\"%s\"}",
-             rtcTime.year(), rtcTime.month(), rtcTime.day(),
-             rtcTime.hour(), rtcTime.minute(), rtcTime.second(),
+             ptm->tm_year + 1900, ptm->tm_mon + 1, ptm->tm_mday,
+             ptm->tm_hour, ptm->tm_min, ptm->tm_sec,
              temp, hum, tds, ph,
              relayState ? "ON" : "OFF",
              WiFi.RSSI(), WiFi.localIP().toString().c_str());
