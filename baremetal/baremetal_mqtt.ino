@@ -1,8 +1,9 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <DHT.h>
-#include <Wire.h>                    // I2C support [web:34][web:38]
-#include <LiquidCrystal_I2C.h>      // I2C LCD library [web:34][web:36]
+#include <Wire.h>                    // I2C support
+#include <LiquidCrystal_I2C.h>       // I2C LCD library
+#include <RTClib.h>                  // RTC library
 
 // ---------- Pins ----------
 #define DHT_PIN   4
@@ -20,7 +21,10 @@ const int   mqtt_port   = 1883;
 const char* mqtt_topic  = "/sensor_data_stream";
 
 // ---------- LCD (I2C) ----------
-LiquidCrystal_I2C lcd(0x27, 16, 2);  // Address 0x27 common, scan if needed [web:34][web:44]
+LiquidCrystal_I2C lcd(0x27, 16, 2);  // Address 0x27, 16x2 display
+
+// ---------- RTC ----------
+RTC_DS3231 rtc;
 
 // ---------- Globals ----------
 WiFiClient espClient;
@@ -29,51 +33,103 @@ DHT dht(DHT_PIN, DHT_TYPE);
 
 unsigned long lastPublish = 0;
 const unsigned long publishInterval = 5000;  // ms
+int displayMode = 0;  // 0=Time+IP, 1=Sensors, 2=WiFi Status
+unsigned long lastDisplaySwitch = 0;
+const unsigned long displayInterval = 3000;  // Switch every 3 sec
 
 // ---------- Helper: init LCD ----------
 void setupLCD() {
   lcd.init();
   lcd.backlight();
+  
+  // Display "AI & ROBOTICS" on first line
   lcd.setCursor(0, 0);
-  lcd.print("Starting...");
-  delay(1000);
+  lcd.print("AI & ROBOTICS");
+  
+  // Display "D&T LAB DPSI" on second line
+  lcd.setCursor(0, 1);
+  lcd.print("D&T LAB DPSI");
+  
+  delay(3000);
+  
+  // Show current time during upload/initialization
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Getting time..");
+  delay(2000);
   lcd.clear();
 }
 
-// ---------- Helper: connect WiFi + show IP on LCD ----------
+// ---------- Helper: connect WiFi ----------
 void setupWiFi() {
-  delay(10);
-  Serial.println();
   Serial.print("Connecting to ");
   Serial.println(ssid);
 
   WiFi.begin(ssid, password);
   lcd.setCursor(0, 0);
-  lcd.print("WiFi: ");
+  lcd.print("WiFi:.....");
   
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+    lcd.setCursor(12, 0);
     lcd.print(".");
   }
   
-  Serial.println("\nWiFi connected");
-  Serial.print("IP address: ");
+  Serial.println("\nWiFi connected!");
+  Serial.print("IP: ");
   Serial.println(WiFi.localIP());
+}
+
+// ---------- Helper: init RTC ----------
+void setupRTC() {
+  if (!rtc.begin()) {
+    Serial.println("Couldn't find RTC");
+    lcd.clear();
+    lcd.print("RTC ERROR!");
+    lcd.setCursor(0, 1);
+    lcd.print("Check wiring");
+    delay(3000);
+  }
   
-  // Display IP on LCD
+  // Show current time on LCD when setting RTC
+  if (rtc.lostPower()) {
+    Serial.println("RTC lost power, setting time");
+    
+    DateTime compileTime(F(__DATE__), F(__TIME__));
+    rtc.adjust(compileTime);
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("RTC: Set Time");
+    lcd.setCursor(0, 1);
+    
+    char timeStr[17];
+    sprintf(timeStr, "%s %s", compileTime.timestamp().c_str(), compileTime.timestamp().c_str());
+    lcd.print(timeStr);
+    delay(3000);
+  } else {
+    Serial.println("RTC OK - Current time set");
+  }
+  
+  // Display current time briefly after RTC setup
+  DateTime now = rtc.now();
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("WiFi OK");
+  lcd.print("Time synced:");
   lcd.setCursor(0, 1);
-  lcd.print(WiFi.localIP().toString());
+  char currentTime[9];
+  sprintf(currentTime, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+  lcd.print(currentTime);
+  delay(2000);
+  lcd.clear();
 }
 
 // ---------- Helper: connect MQTT ----------
 void reconnectMQTT() {
   while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    String clientId = "hydrointelligence";
+    Serial.print("MQTT...");
+    String clientId = "hydrointel-";
     clientId += String(random(0xffff), HEX);
 
     if (client.connect(clientId.c_str())) {
@@ -81,10 +137,58 @@ void reconnectMQTT() {
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
+      Serial.println(" retry in 5s");
       delay(5000);
     }
   }
+}
+
+// ---------- Display Mode 0: Time + IP ----------
+void displayTimeIP(DateTime now) {
+  lcd.clear();
+  
+  // Line 1: Time HH:MM:SS
+  lcd.setCursor(0, 0);
+  char timeStr[9];
+  sprintf(timeStr, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+  lcd.print(timeStr);
+  
+  // Line 2: IP address
+  lcd.setCursor(0, 1);
+  lcd.print("IP:");
+  lcd.print(WiFi.localIP().toString());
+}
+
+// ---------- Display Mode 1: All Sensors ----------
+void displaySensors(float temp, float hum, float tds, float ph) {
+  lcd.clear();
+  
+  // Line 1: T + H
+  lcd.setCursor(0, 0);
+  lcd.print("T:");
+  lcd.print(temp, 1);
+  lcd.print("C H:");
+  lcd.print(hum, 0);
+  lcd.print("%");
+  
+  // Line 2: pH + TDS
+  lcd.setCursor(0, 1);
+  lcd.print("pH:");
+  lcd.print(ph, 1);
+  lcd.print(" TDS:");
+  lcd.print((int)tds);
+  lcd.print("ppm");
+}
+
+// ---------- Display Mode 2: WiFi Status ----------
+void displayWiFiStatus() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("WiFi:OK");
+  lcd.setCursor(0, 1);
+  lcd.print("Signal:");
+  lcd.print(WiFi.RSSI());
+  lcd.print("dBm");
 }
 
 // ---------- Sensor read helpers ----------
@@ -107,8 +211,8 @@ float readTDS() {
     raw += analogRead(TDS_PIN);
     delay(10);
   }
-  float avgRaw   = raw / (float)samples;
-  float voltage  = avgRaw * (3.3 / 4095.0);
+  float avgRaw = raw / (float)samples;
+  float voltage = avgRaw * (3.3 / 4095.0);
   float tdsValue = (133.42 * voltage * voltage * voltage
                    - 255.86 * voltage * voltage
                    + 857.39 * voltage) * 0.5;
@@ -122,10 +226,10 @@ float readPH() {
     raw += analogRead(PH_PIN);
     delay(10);
   }
-  float avgRaw  = raw / (float)samples;
+  float avgRaw = raw / (float)samples;
   float voltage = avgRaw * (3.3 / 4095.0);
   float phValue = 7.0 + ((2.5 - voltage) / 2.5) * 3.5;
-  if (phValue < 0)  phValue = 0;
+  if (phValue < 0) phValue = 0;
   if (phValue > 14) phValue = 14;
   return phValue;
 }
@@ -134,53 +238,72 @@ float readPH() {
 void setup() {
   Serial.begin(115200);
   
-  // Initialize I2C (default pins: SDA=21, SCL=22 on ESP32) [web:34]
-  Wire.begin();
+  Wire.begin();  // SDA=21, SCL=22
   setupLCD();
   
   dht.begin();
   pinMode(TDS_PIN, INPUT);
   pinMode(PH_PIN, INPUT);
-
-  setupWiFi();  // Now shows IP on LCD too
-
+  
+  setupRTC();
+  setupWiFi();
+  
+  lcd.clear();
+  lcd.print("All systems OK!");
+  delay(1500);
+  
   client.setServer(mqtt_server, mqtt_port);
 }
 
 // ---------- Main loop ----------
 void loop() {
+  // MQTT maintenance
   if (!client.connected()) {
     reconnectMQTT();
   }
   client.loop();
 
+  // Update display every 3 seconds
   unsigned long now = millis();
+  if (now - lastDisplaySwitch >= displayInterval) {
+    lastDisplaySwitch = now;
+    displayMode = (displayMode + 1) % 3;  // Cycle 0,1,2
+  }
+
+  // Data publish every 5 seconds
   if (now - lastPublish >= publishInterval) {
     lastPublish = now;
-
+    
+    DateTime rtcTime = rtc.now();
     float temp = readTemperature();
-    float hum  = readHumidity();
-    float tds  = readTDS();
-    float ph   = readPH();
+    float hum = readHumidity();
+    float tds = readTDS();
+    float ph = readPH();
 
     if (temp < -500 || hum < 0) {
-      Serial.println("DHT error, skipping publish");
+      Serial.println("DHT error");
       return;
     }
 
-    // Build JSON payload
-    char payload[200];
-    snprintf(payload, sizeof(payload),
-             "{\"temperature\":%.2f,\"humidity\":%.2f,\"tds\":%.2f,\"ph\":%.2f}",
-             temp, hum, tds, ph);
-
-    Serial.print("Publishing: ");
-    Serial.println(payload);
-
-    if (client.publish(mqtt_topic, payload)) {
-      Serial.println("Publish OK");
-    } else {
-      Serial.println("Publish FAILED");
+    // Update display based on current mode
+    switch(displayMode) {
+      case 0: displayTimeIP(rtcTime); break;
+      case 1: displaySensors(temp, hum, tds, ph); break;
+      case 2: displayWiFiStatus(); break;
     }
+
+    // MQTT payload with full data
+    char payload[350];
+    snprintf(payload, sizeof(payload),
+             "{\"time\":\"%04d-%02d-%02dT%02d:%02d:%02d\","
+             "\"temp\":%.1f,\"hum\":%.1f,\"tds\":%.0f,\"ph\":%.1f,"
+             "\"rssi\":%d,\"ip\":\"%s\"}",
+             rtcTime.year(), rtcTime.month(), rtcTime.day(),
+             rtcTime.hour(), rtcTime.minute(), rtcTime.second(),
+             temp, hum, tds, ph, WiFi.RSSI(), WiFi.localIP().toString().c_str());
+
+    Serial.println(payload);
+    
+    client.publish(mqtt_topic, payload);
   }
 }
