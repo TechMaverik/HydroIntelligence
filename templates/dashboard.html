@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hydro Farm Intelligence</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Auto refresh every 5 minutes -->
+    <script>
+        setTimeout(function () {
+            window.location.reload();
+        }, 3000); // 300000 ms = 5 minutes
+    </script>
+
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg: #f4f6fb;
+            --card: #ffffff;
+            --primary: #4f46e5;
+            --secondary: #06b6d4;
+            --text: #1f2937;
+            --muted: #6b7280;
+            --shadow: 0 10px 25px rgba(0,0,0,0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: #fff;
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .header p {
+            margin-top: 8px;
+            opacity: 0.9;
+        }
+
+        .info-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .info-chip {
+            background: rgba(255,255,255,0.2);
+            padding: 6px 14px;
+            border-radius: 20px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--card);
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            text-align: center;
+            transition: transform 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+        }
+
+        .card .icon {
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+
+        .card h2 {
+            font-size: 18px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .card .value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .relay {
+            font-size: 28px;
+            font-weight: 700;
+            color: {% if relay == 'ON' %}#16a34a{% else %}#dc2626{% endif %};
+        }
+
+        footer {
+            margin-top: 40px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- HEADER -->
+    <div class="header">
+        <h1>Hydro Farm Intelligence System Dashboard</h1>
+        <p></p>
+
+        <div class="info-bar">
+            <div class="info-chip">📡 IP: {{ device_ip }}</div>
+            <div class="info-chip">🕒 {{ current_time }}</div>
+        </div>
+    </div>
+
+    <!-- SENSOR GRID -->
+    <div class="grid">
+
+        <div class="card">
+            <div class="icon">🌡️</div>
+            <h2>Temperature</h2>
+            <div class="value">{{ temperature }} °C</div>
+        </div>
+
+        <div class="card">
+            <div class="icon">💧</div>
+            <h2>Humidity</h2>
+            <div class="value">{{ humidity }} %</div>
+        </div>
+
+        <div class="card">
+            <div class="icon">⚡</div>
+            <h2>TDS</h2>
+            <div class="value">{{ tds }} ppm</div>
+        </div>
+
+        <div class="card">
+            <div class="icon">🧪</div>
+            <h2>pH Value</h2>
+            <div class="value">{{ ph }}</div>
+        </div>
+
+        <div class="card">
+            <div class="icon">🔌</div>
+            <h2>Pump Status</h2>
+            <div class="relay">{{ relay }}</div>
+        </div>
+
+    </div>
+
+    <footer>
+        Designed and Developed in AI Robotics & DnT LAB DPS Indirapuram
+    </footer>
+
+</div>
+
+</body>
+</html>
