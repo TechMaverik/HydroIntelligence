@@ -13,6 +13,7 @@
 #define TDS_PIN   34
 #define PH_PIN    35
 #define RELAY_PIN 2
+#define RELAY_PIN2 5
 
 // ---------- WiFi ----------
 const char* ssid     = "Ai Lab";
@@ -99,7 +100,9 @@ void updateRelay() {
 
   if (relayState != shouldBeOn) {
     relayState = shouldBeOn;
+    
     digitalWrite(RELAY_PIN, relayState ? HIGH : LOW);
+    digitalWrite(RELAY_PIN2, relayState ? HIGH : LOW);
   }
 }
 
@@ -182,6 +185,8 @@ void setup() {
   Serial.begin(115200);
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW);
+  pinMode(RELAY_PIN2, OUTPUT);
+  digitalWrite(RELAY_PIN2, LOW);
 
   Wire.begin();
   setupLCD();
