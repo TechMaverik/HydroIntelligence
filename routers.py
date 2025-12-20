@@ -11,7 +11,7 @@ app = Flask(__name__)
 # ---------- MQTT CONFIG ----------
 MQTT_BROKER = "broker.mqtt.cool"  # change if needed
 MQTT_PORT = 1883
-MQTT_TOPIC = "/sensor_data_stream"  # change if needed
+MQTT_TOPIC = "/sensordata"  # change if needed
 
 # ---------- GLOBAL SENSOR DATA ----------
 sensor_data = {
@@ -37,8 +37,8 @@ def on_message(client, userdata, msg):
         data = json.loads(payload)
 
         # Read values from MQTT JSON
-        sensor_data["temperature"] = data.get("temp", 0)
-        sensor_data["humidity"] = data.get("hum", 0)
+        sensor_data["temperature"] = data.get("temperature", 0)
+        sensor_data["humidity"] = data.get("humidity", 0)
         sensor_data["tds"] = data.get("tds", 0)
         sensor_data["ph"] = data.get("ph", 0)
         sensor_data["relay"] = data.get("relay", "OFF")
@@ -84,4 +84,4 @@ def dashboard():
 
 # ---------- MAIN ----------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=2025, debug=True)

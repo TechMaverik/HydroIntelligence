@@ -16,8 +16,8 @@
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // ------------- WiFi / MQTT ------------
-const char* ssid        = "Ai Lab";
-const char* password    = "Welc0me@123";
+const char* ssid        = "Airtel-MyWiFi-AMF-311WW-AA75";
+const char* password    = "178237bb";
 
 const char* mqtt_server = "broker.mqtt.cool";
 const int   mqtt_port   = 1883;
@@ -110,9 +110,8 @@ void updateLCD() {
 
   // Line 1: TDS and pH
   lcd.setCursor(4, 1);
-  if (tds < 10)        lcd.print(" ");
-  else if (tds < 100)  lcd.print(" ");
-  else if (tds < 1000) lcd.print(" ");
+  
+  
   lcd.print((int)tds);
 
   lcd.setCursor(12, 1);
