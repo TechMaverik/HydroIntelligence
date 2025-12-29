@@ -32,7 +32,7 @@ unsigned long lastMqttPublish          = 0;
 const unsigned long mqttIntervalMs     = 1000;   // 1 s
 
 unsigned long lastRelayToggle          = 0;
-const unsigned long relayToggleIntervalMs = 60000; // 1 min
+const unsigned long relayToggleIntervalMs = 60000x15; // 15 min
 
 unsigned long lastLcdUpdate            = 0;
 const unsigned long lcdIntervalMs      = 2000;   // 2 s
@@ -87,7 +87,7 @@ void updateLCD() {
   float temp = dht.readTemperature();
   float hum  = dht.readHumidity();
   float tds  = readTDS();
-  float ph   = readPH();
+  float ph   = readPH() - 4.0;
 
   // Line 0: T and H
   lcd.setCursor(2, 0);

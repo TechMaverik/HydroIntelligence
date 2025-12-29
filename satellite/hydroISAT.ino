@@ -10,8 +10,8 @@
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-const char* ssid = "Ai Lab";
-const char* password = "Welc0me@123";
+const char* ssid = "DPSSRW-M30";
+const char* password = "Dpsob@19216";
 const char* mqtt_server = "broker.mqtt.cool";
 const int mqtt_port = 1883;
 const char* mqtt_user = "";
