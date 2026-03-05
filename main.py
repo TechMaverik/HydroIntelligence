@@ -30,7 +30,7 @@ if not os.path.exists(CSV_FILE):
                 "humidity",
                 "tds",
                 "ph",
-                "relay",
+                "relay1",
                 "device_ip",
                 "server_ip",
             ]
@@ -74,7 +74,7 @@ def log_to_csv_if_changed():
         sensor_data["humidity"],
         sensor_data["tds"],
         sensor_data["ph"],
-        sensor_data["relay"],
+        sensor_data["relay1"],
         sensor_data["ip"],
         server_ip,
     ]
@@ -106,7 +106,7 @@ def on_message(client, userdata, msg):
         sensor_data["humidity"] = data.get("humidity", 0)
         sensor_data["tds"] = data.get("tds", 0)
         sensor_data["ph"] = data.get("ph", 0)
-        sensor_data["relay"] = data.get("relay", "OFF")
+        sensor_data["relay1"] = data.get("relay1", "OFF")
 
         # DEVICE IP FROM MQTT PAYLOAD
         sensor_data["ip"] = data.get("ip", "0.0.0.0")
@@ -139,7 +139,7 @@ def dashboard():
     humidity = sensor_data["humidity"]
     tds = sensor_data["tds"]
     ph = sensor_data["ph"]
-    relay = sensor_data["relay"]
+    relay = sensor_data["relay1"]
     device_ip = sensor_data["ip"]  # ESP32 IP
     server_ip = socket.gethostbyname(socket.gethostname())
     current_time = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
